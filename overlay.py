@@ -32,10 +32,23 @@ class Node(threading.Thread):
 
     def updateFingerTable(self):
         for i in range(HASH_BITS):
-            self.fingerTable[i] = [self.id, None, None]
+            self.fingerTable[i] = self.info
             for j in allNodes:
                 if self.endInclusive(j[0], (self.id + 2**i) % LOGICAL_SIZE ,self.fingerTable[i][0] ):
                     self.fingerTable[i] = j
+
+    def updateFingerTable2(self):
+        for i in range(HASH_BITS):
+            self.fingerTable[i] = [self.id, self.ip, self.port]
+            f = False
+            for j in allNodes:
+                if j[0] >= (self.id + 2**i) % LOGICAL_SIZE:
+                    self.fingerTable[i] = j
+                    f = True
+                    break
+
+            if not f:
+                self.fingerTable[i] = allNodes[0]
 
     def between(self, n1, n2, n3):
         ## if n1 is in between n2 and n3
@@ -60,8 +73,8 @@ class Node(threading.Thread):
         key = key % LOGICAL_SIZE
         startNodeIP, startNodePort = startNodeAdd.split(':')
 
-        print("In findNode() method of node: " + str(self) + " for the key: " + str(key))
-        print(sep)
+        # print("In findNode() method of node: " + str(self) + " for the key: " + str(key))
+        # print(sep)
 
         nextHop = [self.id, self.ip, self.port]
         for i in range(HASH_BITS):
@@ -119,11 +132,11 @@ class Node(threading.Thread):
             # print(str(data))
             # print("$$$$$")
             self.fingerTable[i] = [int(data[1]), data[2], int(data[3])]
-        resultString = str(self.id) + " " + self.ip + " " + str(self.port)
-        updateMsg = "changeNode 0 " + resultString
-        self.sock.sendto(updateMsg, (self.predecessor[1], int(self.predecessor[2])))
-        updateMsg = "changeNode 1 " + resultString
-        self.sock.sendto(updateMsg, (self.fingerTable[0][1], int(self.fingerTable[0][2])))
+        # resultString = str(self.id) + " " + self.ip + " " + str(self.port)
+        # updateMsg = "changeNode 1 " + resultString
+        # self.sock.sendto(updateMsg, (self.predecessor[1], int(self.predecessor[2])))
+        # updateMsg = "changeNode 0 " + resultString
+        # self.sock.sendto(updateMsg, (self.fingerTable[0][1], int(self.fingerTable[0][2])))
 
     def update_other_pointers(self):
         resultString = str(self.id) + " " + self.ip + " " + str(self.port)
@@ -142,10 +155,10 @@ class Node(threading.Thread):
             return
         else:
             for i in range(HASH_BITS):
-                if self.endInclusive(newNodeID, self.fingerTable[i][0], (self.id + 2**i) % LOGICAL_SIZE):
+                if self.endInclusive(newNodeID, (self.id + 2**i) % LOGICAL_SIZE, self.fingerTable[i][0]):
                     self.fingerTable[i] = [newNodeID, newNodeIP, newNodePort]
-                    print("Updated my " + str(i) + " finger table entry to [" + str(newNodeID) + ", " + newNodeIP + ", " + str(newNodePort) + "]. I am " + str(self))
-                    print(sep)
+                    # print("Updated my " + str(i) + " finger table entry to [" + str(newNodeID) + ", " + newNodeIP + ", " + str(newNodePort) + "]. I am " + str(self))
+                    # print(sep)
             resultString = str(newNodeID) + " " + newNodeIP + " " + str(newNodePort)
             updateMsg = "newAdded " + resultString
             self.sock.sendto(updateMsg, (self.fingerTable[0][1], int(self.fingerTable[0][2])))
@@ -367,11 +380,11 @@ class Node(threading.Thread):
                 lst = cmd.split()
                 if lst[1] == '0':
                     self.fingerTable[0] = [int(lst[2]), lst[3], int(lst[4])]
-                    print("Updating my successor to " + str(self.fingerTable[0]))
+                    print("Updating my successor to " + str(self.fingerTable[0]) + ". I am node: " + str(self))
                     print(sep)
                 elif (lst[1] == str(1)):
                     self.predecessor = [int(lst[2]), lst[3], int(lst[4])]
-                    print("Updating my predecessor to " + str(self.predecessor))
+                    print("Updating my predecessor to " + str(self.predecessor)+ "I am node: " + str(self))
                     print(sep)
 
             elif cmd.startswith(b'newAdded'):
