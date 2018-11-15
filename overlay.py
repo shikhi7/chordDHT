@@ -10,7 +10,7 @@ nodeIP = "127.0.0.1"
 nodePort = 4450
 sep = "-"*30 + "\n"
 sep2 = "-"*30
-recvBytes = 2048
+recvBytes = 4096
 
 def getKey(ip, port):
     raw = str(ip) + str(port)
@@ -26,7 +26,7 @@ class Node(threading.Thread):
         self.info = [self.id, self.ip, self.port]
         self.predecessor = None
         self.fingerTable = {}
-        self.dataTable = {}
+        self.dataTable = []
         self.sock = None
         self.dynamicNode = dynamicNode
 
@@ -155,10 +155,10 @@ class Node(threading.Thread):
             return
         else:
             for i in range(HASH_BITS):
-                if self.endInclusive(newNodeID, (self.id + 2**i) % LOGICAL_SIZE, self.fingerTable[i][0]):
+                if self.endInclusive(newNodeID, (self.id + 2**i) % LOGICAL_SIZE, self.fingerTable[i][0] ):
                     self.fingerTable[i] = [newNodeID, newNodeIP, newNodePort]
-                    # print("Updated my " + str(i) + " finger table entry to [" + str(newNodeID) + ", " + newNodeIP + ", " + str(newNodePort) + "]. I am " + str(self))
-                    # print(sep)
+                    print("Updated my " + str(i) + " finger table entry to [" + str(newNodeID) + ", " + newNodeIP + ", " + str(newNodePort) + "]. I am " + str(self))
+                    print(sep)
             resultString = str(newNodeID) + " " + newNodeIP + " " + str(newNodePort)
             updateMsg = "newAdded " + resultString
             self.sock.sendto(updateMsg, (self.fingerTable[0][1], int(self.fingerTable[0][2])))
@@ -173,7 +173,7 @@ class Node(threading.Thread):
     def putContent(self, msg):
         msgList = msg.split()
         username = msgList[0]
-        password = msgList[1]
+        password = msgList[1:]
         msgKey = self.getMsgKey(username)
         msgKey = msgKey % LOGICAL_SIZE
 
@@ -194,13 +194,44 @@ class Node(threading.Thread):
         resultString = "putYourContent " + msg
         self.sock.sendto(resultString, (msgKeySucc[1], int(msgKeySucc[2])))
 
+    def vote(self, msg):
+        msgList = msg.split()
+        username = msgList[0]
+        password = msgList[1:]
+        msgKey = self.getMsgKey(username)
+        msgKey = msgKey % LOGICAL_SIZE
+
+        newsock_ip = nodeIP
+        newsock_port = 18111
+        newsock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        newsock.bind((newsock_ip, newsock_port))
+        self.findNode(msgKey, str(newsock_ip)+':'+str(newsock_port))
+
+        data, addr = newsock.recvfrom(recvBytes)
+        data = data[len('foundNode '):].split()
+        msgKeySucc = data[:3]
+        newsock.close()
+
+        resultString = "vYourContent " + msg
+        self.sock.sendto(resultString, (msgKeySucc[1], int(msgKeySucc[2])))
+
     def putInMyContent(self, msg):
         msgList = msg.split()
         username = msgList[0]
-        password = msgList[1]
-        msgKey = self.getMsgKey(username)
-        msgKey = msgKey % LOGICAL_SIZE
-        self.dataTable[msgKey] = [username, password]
+        password = msgList[1:]
+        # msgKey = self.getMsgKey(username)
+        # msgKey = msgKey % LOGICAL_SIZE
+        self.dataTable.append([username, password, 0])
+
+    def voteInMyContent(self, msg):
+        msgList = msg.split()
+        username = msgList[0]
+        password = msgList[1:]
+        # msgKey = self.getMsgKey(username)
+        # msgKey = msgKey % LOGICAL_SIZE
+        for item in self.dataTable:
+            if (item[0] == username and item[1] == password):
+                item[2] += 1
 
     def getContent(self, msg):
         msgKey = self.getMsgKey(msg)
@@ -224,21 +255,38 @@ class Node(threading.Thread):
         self.sock.sendto(resultString, (msgKeySucc[1], int(msgKeySucc[2])))
 
     def fetchMyContent(self, msg, queryNode):
-        msgKey = self.getMsgKey(msg)
-        msgKey = msgKey % LOGICAL_SIZE
+        # msgKey = self.getMsgKey(msg)
+        # msgKey = msgKey % LOGICAL_SIZE
         queryNodeIP = queryNode[0]
         queryNodePort = queryNode[1]
 
-        response = ""
-        if msgKey in self.dataTable.keys():
-            response = self.dataTable[msgKey][1]
+        exists = False
+        num = 0
+
+        for item in self.dataTable:
+            if(item[0] == msg):
+                exists = True
+                num+=1
+
+        if exists:
+            response = str(num) + " "
+            for item in self.dataTable:
+                if(item[0] == msg):
+                    response += ' '.join(item[1]) + "$$$ "
+            for item in self.dataTable:
+                if(item[0] == msg):
+                    response += str(item[2]) + " "
+            print('About to send the response to msg:*'+msg+'* from my data to queryNode: '+ queryNodeIP + ":" + str(queryNodePort) +'. I am node: ' + str(self))
+            print(sep)
+            resultString = "responseQuery2 " + response
+            self.sock.sendto(resultString, (queryNodeIP, queryNodePort))
+
         else:
             response = "Couldn't find this username!"
-
-        print('About to send the response to msg:*'+msg+'* from my data to queryNode: '+ queryNodeIP + ":" + str(queryNodePort) +'. I am node: ' + str(self))
-        print(sep)
-        resultString = "responseToQuery " + response
-        self.sock.sendto(resultString, (queryNodeIP, queryNodePort))
+            print('About to send the response to msg:*'+msg+'* from my data to queryNode: '+ queryNodeIP + ":" + str(queryNodePort) +'. I am node: ' + str(self))
+            print(sep)
+            resultString = "responseToQuery " + response
+            self.sock.sendto(resultString, (queryNodeIP, queryNodePort))
 
     def printNodes(self, startNode):
         print(self)
@@ -267,8 +315,8 @@ class Node(threading.Thread):
     def printMyDataContents(self):
         print("Contents of node: " + str(self) + " are: ")
         print(sep2)
-        for k,v in self.dataTable.items():
-            print(str(k) + ":" + str(v))
+        for item in self.dataTable:
+            print(item)
         print(sep)
 
     def printAllContents(self, startNodeID=None):
@@ -336,15 +384,18 @@ class Node(threading.Thread):
                 print("Target node is " + str(targetNode))
                 print(sep)
 
-            # elif cmd.startswith(b'findFinger'):
-            #     lst = cmd.split()
-            #     findKey = int(lst[1])
-
-            elif cmd.startswith(b'putContent'):
+            elif cmd.startswith(b'addMember'):
                 msg = ' '.join(cmd.split()[1:])
-                print("About to invoke putContent from node: " + str(self) + " for the message: *" + msg +"*")
+                print("About to invoke addMember from node: " + str(self) + " for the message: *" + msg +"*")
                 print(sep)
                 thread1 = threading.Thread(target = self.putContent, args = (msg, ))
+                thread1.start()
+
+            elif cmd.startswith(b'vote'):
+                msg = ' '.join(cmd.split()[1:])
+                print("About to invoke vote from node: " + str(self) + " for the message: *" + msg +"*")
+                print(sep)
+                thread1 = threading.Thread(target = self.vote, args = (msg, ))
                 thread1.start()
 
             elif cmd.startswith(b'putYourContent'):
@@ -353,9 +404,15 @@ class Node(threading.Thread):
                 print(sep)
                 self.putInMyContent(msg)
 
-            elif cmd.startswith(b'getContent'):
+            elif cmd.startswith(b'vYourContent'):
                 msg = ' '.join(cmd.split()[1:])
-                print("About to invoke getContent from node: " + str(self) + " for the message: *" + msg +"*")
+                print('Received a request to vote for:*'+msg+'* in my data. I am node: ' + str(self))
+                print(sep)
+                self.voteInMyContent(msg)
+
+            elif cmd.startswith(b'getScores'):
+                msg = ' '.join(cmd.split()[1:])
+                print("About to invoke getScores from node: " + str(self) + " for the message: *" + msg +"*")
                 print(sep)
                 thread2 = threading.Thread(target = self.getContent, args = (msg, ))
                 thread2.start()
@@ -369,6 +426,19 @@ class Node(threading.Thread):
             elif cmd.startswith(b'responseToQuery'):
                 response = ' '.join(cmd.split()[1:])
                 print('Got a response *' + response + '*. I am node: ' + str(self))
+                print(sep)
+
+            elif cmd.startswith(b'responseQuery2'):
+                response = cmd.split()[1:]
+                num = int(response[0])
+                msgs = response[1:(-1)*num]
+                msgs = (' '.join(msgs)).split('$$$')
+                # for i in range(num):
+                #     msgs[i] = msgs
+                votes = response[(-1)*num:]
+                print('Got a response. I am node: ' + str(self))
+                for i in range(num):
+                    print(votes[i] + " :: " + msgs[i])
                 print(sep)
 
             elif cmd == b'joinNetwork':
