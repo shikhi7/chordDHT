@@ -147,6 +147,41 @@ class Node(threading.Thread):
         updateMsg = "newAdded " + resultString
         self.sock.sendto(updateMsg, (self.fingerTable[0][1], int(self.fingerTable[0][2])))
 
+    def invoke_content_sharing(self):
+        newsock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        contentMsg = "sendContents " + self.ip + " " + str(self.port)
+        newsock.sendto(contentMsg, (self.fingerTable[0][1], int(self.fingerTable[0][2])))
+
+    def sendContentToNewNode(self, newNodeAddr):
+        # print("Sending contents belonging to new node")
+        # print(sep)
+        newNodeID = getKey(newNodeAddr[0], newNodeAddr[1])
+        contentList = []
+        for item in self.dataTable:
+            k = self.getMsgKey(item[0])
+            if not self.endInclusive(k, newNodeID, self.id):
+                contentList.append(item)
+
+        #  print('sending to new node')
+        if len(contentList) > 0:
+            newsock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            for elem in contentList:
+                ## assuming value is a list
+                # elemMsg = 'contentUpdate ' + ' '.join(map(str, elem))
+                elemMsg = 'contentUpdate ' + elem[0] + ' ' + ' '.join(map(str, elem[1])) + ' ' + str(elem[2])
+                newsock.sendto(elemMsg, tuple(newNodeAddr))
+                self.dataTable.remove(elem)
+            newsock.close()
+        #  print('sent to new node')
+
+    def updateMyContent(self, msg):
+        print('Receiving and updating my content as a new node')
+        print(sep)
+        topic = msg[0]
+        vote = int(msg[-1])
+        member = msg[1:-1]
+        self.dataTable.append([topic, member, vote])
+
     def handleNewAdded(self, newNodeID, newNodeIP, newNodePort):
 
         newNodeID = int(newNodeID)
@@ -157,8 +192,8 @@ class Node(threading.Thread):
             for i in range(HASH_BITS):
                 if self.endInclusive(newNodeID, (self.id + 2**i) % LOGICAL_SIZE, self.fingerTable[i][0] ):
                     self.fingerTable[i] = [newNodeID, newNodeIP, newNodePort]
-                    print("Updated my " + str(i) + " finger table entry to [" + str(newNodeID) + ", " + newNodeIP + ", " + str(newNodePort) + "]. I am " + str(self))
-                    print(sep)
+                    # print("Updated my " + str(i) + " finger table entry to [" + str(newNodeID) + ", " + newNodeIP + ", " + str(newNodePort) + "]. I am " + str(self))
+                    # print(sep)
             resultString = str(newNodeID) + " " + newNodeIP + " " + str(newNodePort)
             updateMsg = "newAdded " + resultString
             self.sock.sendto(updateMsg, (self.fingerTable[0][1], int(self.fingerTable[0][2])))
@@ -351,6 +386,7 @@ class Node(threading.Thread):
             self.predecessor = [int(data[3]), data[4], int(data[5])]
             self.initialize_finger_table()
             self.update_other_pointers()
+            self.invoke_content_sharing()
             # self.updateContents()
             print("I have joined the network! Here are my neighbours:")
             self.printNeighbourInfo()
@@ -471,6 +507,15 @@ class Node(threading.Thread):
                     self.printAllContents()
                 else:
                     self.printAllContents(int(lst[1]))
+
+            elif cmd.startswith(b'sendContents'):
+                lst = cmd.split()[1:]
+                newNode_addr = [lst[0], int(lst[1])]
+                self.sendContentToNewNode(newNode_addr)
+
+            elif cmd.startswith(b'contentUpdate'):
+                lst = cmd.split()[1:]
+                self.updateMyContent(lst)
 
             elif cmd == b'nInfo':
                 self.printNeighbourInfo()
